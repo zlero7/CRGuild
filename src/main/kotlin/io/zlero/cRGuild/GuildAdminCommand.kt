@@ -22,7 +22,7 @@ class GuildAdminCommand(private val plugin: CRGuildPlugin) : CommandExecutor, Ta
     private val gm get() = plugin.guildManager
 
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
-        if (!sender.isOp) { sender.sendMessage("§c이 명령어는 관리자만 사용할 수 있습니다."); return true }
+        if (!sender.hasPermission("crguild.admin")) { sender.sendMessage("§c이 명령어는 관리자만 사용할 수 있습니다."); return true }
         if (args.isEmpty()) { sendHelp(sender); return true }
 
         when (args[0]) {
@@ -122,7 +122,7 @@ class GuildAdminCommand(private val plugin: CRGuildPlugin) : CommandExecutor, Ta
     }
 
     override fun onTabComplete(sender: CommandSender, command: Command, alias: String, args: Array<out String>): List<String> {
-        if (!sender.isOp) return emptyList()
+        if (!sender.hasPermission("crguild.admin")) return emptyList()
         val guildNames = gm.getAllGuildNames().toList()
         return when {
             args.size == 1 -> listOf("해산","정보","국고","레벨","추방","목록").filter { it.startsWith(args[0]) }
