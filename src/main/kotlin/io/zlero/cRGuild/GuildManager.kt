@@ -143,7 +143,7 @@ class GuildManager(private val plugin: CRGuildPlugin) {
 
         guild.members.add(target.uniqueId)
         playerGuildMap[target.uniqueId] = guild.name
-        saveGuild(guild)
+        saveGuildAsync(guild)
         return Result.success(Unit)
     }
 
@@ -290,7 +290,7 @@ class GuildManager(private val plugin: CRGuildPlugin) {
         guild.officers.remove(targetUuid)
         guild.members.remove(targetUuid)
         playerGuildMap.remove(targetUuid)
-        saveGuild(guild)
+        saveGuildAsync(guild)
         return Result.success(Unit)
     }
 
@@ -311,9 +311,13 @@ class GuildManager(private val plugin: CRGuildPlugin) {
 
         // ★ 탈퇴 시각 기록
         leaveCooldowns[player.uniqueId] = System.currentTimeMillis()
-        saveLeaveCooldowns()
+        val filtered = leaveCooldowns.filter { System.currentTimeMillis() - it.value < LEAVE_COOLDOWN_MS }
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, Runnable {
+            runCatching { storage.saveLeaveCooldowns(filtered) }
+                .onFailure { plugin.logger.warning("[CRGuild] 탈퇴 쿨타임 저장 실패: ${it.message}") }
+        })
 
-        saveGuild(guild)
+        saveGuildAsync(guild)
         return Result.success(Unit)
     }
 
@@ -322,7 +326,7 @@ class GuildManager(private val plugin: CRGuildPlugin) {
             return Result.failure(IllegalArgumentException("해당 플레이어는 일반 멤버가 아닙니다."))
         guild.members.remove(targetUuid)
         guild.officers.add(targetUuid)
-        saveGuild(guild)
+        saveGuildAsync(guild)
         return Result.success(Unit)
     }
 
@@ -331,7 +335,7 @@ class GuildManager(private val plugin: CRGuildPlugin) {
             return Result.failure(IllegalArgumentException("해당 플레이어는 부길드장이 아닙니다."))
         guild.officers.remove(targetUuid)
         guild.members.add(targetUuid)
-        saveGuild(guild)
+        saveGuildAsync(guild)
         return Result.success(Unit)
     }
 
@@ -342,7 +346,7 @@ class GuildManager(private val plugin: CRGuildPlugin) {
         guild.members.remove(newMasterUuid)
         guild.members.add(guild.master)
         guild.master = newMasterUuid
-        saveGuild(guild)
+        saveGuildAsync(guild)
         return Result.success(Unit)
     }
 
@@ -356,7 +360,7 @@ class GuildManager(private val plugin: CRGuildPlugin) {
             return Result.failure(IllegalStateException("잔액이 부족합니다."))
         eco.withdrawPlayer(player, amount.toDouble())
         guild.treasury += amount
-        saveGuild(guild)
+        saveGuildAsync(guild)
         return Result.success(Unit)
     }
 
@@ -370,7 +374,7 @@ class GuildManager(private val plugin: CRGuildPlugin) {
             return Result.failure(IllegalStateException("국고 잔액이 부족합니다. 현재: ${formatMoney(guild.treasury)}원"))
         guild.treasury -= amount
         eco.depositPlayer(player, amount.toDouble())
-        saveGuild(guild)
+        saveGuildAsync(guild)
         return Result.success(Unit)
     }
 
@@ -384,7 +388,7 @@ class GuildManager(private val plugin: CRGuildPlugin) {
             return Result.failure(IllegalStateException("국고가 부족합니다. 필요: ${formatMoney(cost)}원, 현재: ${formatMoney(guild.treasury)}원"))
         guild.treasury -= cost
         guild.level++
-        saveGuild(guild)
+        saveGuildAsync(guild)
         return Result.success(Unit)
     }
 
