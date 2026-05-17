@@ -1,0 +1,31 @@
+name: CRGuild
+version: '1.0.0'
+main: io.zlero.cRGuild.CRGuildPlugin
+api-version: '1.20'
+depend: [Vault, WorldEdit, CRFramework]
+authors: [zlero]
+
+libraries:
+  - com.zaxxer:HikariCP:5.1.0
+  - org.xerial:sqlite-jdbc:3.45.1.0
+
+commands:
+  길드:
+    description: 길드 관련 명령어
+    usage: /길드 [선포|정보|초대|수락|거절|추방|탈퇴|해산|국고|레벨업|공지|임명|해임|위임|목록|채팅|이동]
+    aliases: [guild]
+  전쟁:
+    description: 전쟁 관련 명령어
+    usage: /전쟁 [선포|항복|항복확인|현황]
+    aliases: [war]
+  전쟁관리:
+    description: 전쟁 관리 명령어 (OP 전용)
+    usage: /전쟁관리 [하위명령어]
+  길드관리:
+    description: 길드 관리 명령어 (OP 전용)
+    usage: /길드관리 [하위명령어]
+
+permissions:
+  crguild.admin:
+    description: 관리자 권한 (추후 확장용)
+    default: op

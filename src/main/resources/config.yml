@@ -1,0 +1,135 @@
+# ════════════════════════════════════════════
+#   CRGuild 설정 파일
+# ════════════════════════════════════════════
+
+war:
+  min-online: 1
+  surrender-base-cost: 1000000
+  surrender-cost-increase: 1000000
+
+# ════════════════════════════════════════════
+#   저장소 설정
+#   type: yaml   → plugins/CRGuild/guilds/*.yml 파일로 저장 (기본값)
+#   type: sqlite → plugins/CRGuild/guilds.db 파일로 저장
+#   type: mysql  → 아래 host/port/database/username/password 설정 필요
+# ════════════════════════════════════════════
+
+storage:
+  type: yaml
+  host: localhost
+  port: 3306
+  database: crguild
+  username: root
+  password: ""
+
+# ════════════════════════════════════════════
+#   메시지 설정
+#   · '&' 색상 코드 사용 가능  ( &a=초록, &c=빨강, &e=노랑, &f=흰색, &7=회색, &l=굵게 )
+#   · %변수명%  형식으로 변수 사용
+#   · 여러 줄은 리스트로 작성:
+#       key:
+#         - "첫 번째 줄"
+#         - "두 번째 줄"
+# ════════════════════════════════════════════
+
+messages:
+
+  # ── 공통 ──────────────────────────────────
+  common:
+    no-guild: "&c[!] 소속된 길드가 없습니다."
+    guild-not-found: "&c[!] 존재하지 않는 길드입니다."
+
+  # ── 길드 ──────────────────────────────────
+  guild:
+    no-guild: "&c[!] 소속된 길드가 없습니다. &7/길드 선포 [ 이름 ] &c으로 창설하거나 초대를 받으세요."
+    # %guild% = 창설된 길드명
+    create-broadcast:
+      - " "
+      - "&6&l[ 길드 창설 ] &r&f%guild% &7길드가 새롭게 창설되었습니다!"
+      - " "
+    # %guild% = 영토가 추가된 길드명
+    beacon-add-broadcast:
+      - " "
+      - "&6&l[ 영토 확장 ] &r&f%guild% &7길드의 영토가 추가되었습니다!"
+      - " "
+    # %player% = 초대 대상 플레이어명, %time% = 남은 쿨타임
+    invite-cooldown: "&c[!] &f%player%&c님은 재가입 쿨타임이 남아 초대할 수 없습니다. &7(%time% 후 가능)"
+
+  # ── 전쟁 선포 ─────────────────────────────
+  war:
+    declare:
+      usage: "&c[!] 사용법: /전쟁 선포 [길드명]"
+      not-master: "&c[!] 길드장만 전쟁을 선포할 수 있습니다."
+      self: "&c[!] 자신의 길드에는 선포할 수 없습니다."
+      # %attack_guild% = 선포한 길드, %defend_guild% = 선포당한 길드
+      # 전쟁 선포 시 해당 길드원에게는 사운드(ENTITY_WITHER_SPAWN)로 알림
+      broadcast:
+        - " "
+        - " "
+        - "&8[ &4⚔ 전쟁 선포 &8] &f%attack_guild% &7길드가 &f%defend_guild% &7길드에 전쟁을 선포했습니다!"
+        - " "
+        - " "
+
+    # ── 전쟁 시작 ────────────────────────────
+    # 전쟁 시작 시 해당 길드원에게는 사운드(ENTITY_ENDER_DRAGON_GROWL)로 알림
+    start: {}
+
+    # ── 전쟁 항복 ────────────────────────────
+    surrender:
+      not-master: "&c[!] 길드장만 항복을 선언할 수 있습니다."
+      not-at-war: "&c[!] 전쟁 선포 상태가 아닙니다."
+      # %cost% = 차감 금액
+      loser: "&c&l[ 항복 ] &r&c항복. 국고에서 &f%cost%원&c 차감."
+      # %loser_guild% = 패배 길드명
+      winner:
+        - " "
+        - "&a&l[ 전쟁 승리 ] &r&a%loser_guild% 길드가 항복했습니다!"
+        - " "
+      # %loser_guild% = 패배 길드명, %winner_guild% = 승리 길드명
+      broadcast:
+        - " "
+        - " "
+        - "&8[ &4전쟁 &8] &f%loser_guild% &7길드가 &f%winner_guild% &7길드에게 항복했습니다."
+        - " "
+        - " "
+
+    # ── 전쟁 종료 (타임오버) ─────────────────
+    draw:
+      # %guild_a%, %guild_b% = 양측 길드명
+      broadcast:
+        - " "
+        - " "
+        - "&8[ &4⚔ 전쟁 종료 &8] &f%guild_a% &7vs &f%guild_b% &7— &f무승부"
+        - " "
+        - " "
+
+    # ── 성 파괴 ──────────────────────────────
+    beacon-destroy:
+      # %guild% = 파괴당한 길드명, %remaining% = 남은 성 수
+      to-loser:
+        - " "
+        - "&c&l[ 영토 파괴 ] &r&c%guild% 길드의 성이 파괴되었습니다!"
+        - " "
+      # %guild% = 파괴당한 길드명, %remaining% = 남은 성 수
+      to-winner:
+        - " "
+        - "&a&l[ 영토 파괴 ] &r&a%guild% 길드의 성을 파괴했습니다!"
+        - " "
+
+    # ── 길드 멸망 ────────────────────────────
+    defeat:
+      # %guild% = 멸망한 길드명
+      to-loser:
+        - " "
+        - "&4&l[ 길드 멸망 ] &r&c%guild% 길드의 마지막 성이 파괴되어 멸망했습니다!"
+        - " "
+      # %guild% = 멸망한 길드명
+      to-winner:
+        - " "
+        - "&a&l[ 전쟁 승리 ] &r&a%guild% 길드를 멸망시켰습니다!"
+        - " "
+      # %winner_guild% = 승리 길드명, %guild% = 멸망 길드명
+      broadcast:
+        - " "
+        - "&8[ &4⚔ 전쟁 종료 &8] &f%winner_guild% &7길드가 &f%guild% &7길드를 멸망시켰습니다!"
+        - " "

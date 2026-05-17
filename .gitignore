@@ -1,0 +1,23 @@
+# Build output
+build/
+out/
+
+# Gradle cache
+.gradle/
+
+# IDE files
+.idea/
+*.iml
+
+# Local Claude settings
+.claude/
+
+# Compiled class files
+*.class
+
+# Jar files (libs are compile-only local deps, not committed)
+libs/
+
+# OS
+.DS_Store
+Thumbs.db
