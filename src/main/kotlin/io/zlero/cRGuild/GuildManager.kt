@@ -604,6 +604,10 @@ class GuildManager(private val plugin: CRGuildPlugin) {
         warBarTasks.remove(guildName)?.cancel()
     }
 
+    fun removePlayerFromWarBossBar(player: org.bukkit.entity.Player, guildName: String) {
+        warBossBars[guildName]?.removePlayer(player)
+    }
+
     private fun restoreWarBossBar(guild: GuildData) {
         val targetName = guild.warTarget ?: return
         val target = guilds[targetName] ?: return

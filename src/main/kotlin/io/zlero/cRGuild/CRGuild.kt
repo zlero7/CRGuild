@@ -119,10 +119,14 @@ class CRGuildPlugin : JavaPlugin(), Listener {
 
     @EventHandler
     fun onPlayerQuit(event: PlayerQuitEvent) {
-        val guild = guildManager.getGuildByPlayer(event.player) ?: return
-        guildManager.removeWarBossBar(guild.name)
+        val player = event.player
+        val guild  = guildManager.getGuildByPlayer(player)
+        if (guild != null) {
+            // 보스바에서 해당 플레이어만 제거 (길드 전체 보스바는 유지)
+            guildManager.removePlayerFromWarBossBar(player, guild.name)
+        }
         // 퇴장 시 길드 채팅 토글 자동 해제
-        guildListener.guildChatPlayers.remove(event.player.uniqueId)
+        guildListener.guildChatPlayers.remove(player.uniqueId)
     }
 
     // ─── /전쟁 항복확인 2단계 처리 ───────────────────────────────────────
