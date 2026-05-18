@@ -27,6 +27,7 @@ class GuildManager(
     private val pendingDeclarations = HashMap<UUID, String>()
     private var taxTask: BukkitTask? = null
     private lateinit var eco: Economy
+    val economy: Economy get() = eco   // GuildCommand 등 외부 접근용
 
     // 전쟁 보스바: guildName → BossBar
     private val warBossBars  = HashMap<String, BossBar>()
