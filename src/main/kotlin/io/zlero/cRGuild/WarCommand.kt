@@ -34,7 +34,7 @@ class WarCommand(
 
     // ─── /전쟁 선포 [길드명] ─────────────────────────────────────────────
 
-    private fun cmdDeclare(player: Player, args: Array<String>) {
+    private fun cmdDeclare(player: Player, args: Array<out String>) {
         if (args.size < 2) { player.sendMessage(config.msg("war.declare.usage")); return }
 
         val myGuild = gm.getGuildByPlayer(player) ?: run { player.sendMessage(config.msg("common.no-guild")); return }

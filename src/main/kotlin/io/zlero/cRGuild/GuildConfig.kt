@@ -8,6 +8,8 @@ import org.bukkit.plugin.java.JavaPlugin
 @Configuration("config.yml")
 class GuildConfig(plugin: JavaPlugin) : CRYamlConfiguration(plugin, "config.yml") {
 
+    init { plugin.saveDefaultConfig() }
+
     val storageType: String get() = string("storage.type", "yaml")
     val storageHost: String get() = string("storage.host", "localhost")
     val storagePort: Int get() = int("storage.port", 3306)

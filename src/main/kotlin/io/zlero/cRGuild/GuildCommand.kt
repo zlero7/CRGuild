@@ -99,7 +99,7 @@ class GuildCommand(
 
     // ─── /길드 선포 [이름] ────────────────────────────────────────────────
 
-    private fun cmdDeclare(player: Player, args: Array<String>) {
+    private fun cmdDeclare(player: Player, args: Array<out String>) {
         if (args.size < 2) { player.sendMessage("§c사용법: /길드 선포 [이름]"); return }
         val name = args[1]
         if (name.length > 10) { player.sendMessage("§c길드명은 10자 이하여야 합니다."); return }
@@ -122,7 +122,7 @@ class GuildCommand(
 
     // ─── /길드 정보 [길드명] ──────────────────────────────────────────────
 
-    private fun cmdInfo(player: Player, args: Array<String>) {
+    private fun cmdInfo(player: Player, args: Array<out String>) {
         val guild = if (args.size < 2) {
             gm.getGuildByPlayer(player) ?: run { player.sendMessage("§c소속된 길드가 없습니다. §7/길드 정보 [길드명] 으로 다른 길드를 조회하세요."); return }
         } else {
@@ -134,7 +134,7 @@ class GuildCommand(
 
     // ─── /길드 초대 ───────────────────────────────────────────────────────
 
-    private fun cmdInvite(player: Player, args: Array<String>) {
+    private fun cmdInvite(player: Player, args: Array<out String>) {
         if (args.size < 2) { player.sendMessage("§c사용법: /길드 초대 [플레이어]"); return }
         val guild = gm.getGuildByPlayer(player) ?: run { player.sendMessage("§c길드에 소속되어 있지 않습니다."); return }
         if (!guild.isOfficer(player.uniqueId)) { player.sendMessage("§c부길드장 이상만 초대할 수 있습니다."); return }
@@ -180,7 +180,7 @@ class GuildCommand(
 
     // ─── /길드 추방 ───────────────────────────────────────────────────────
 
-    private fun cmdKick(player: Player, args: Array<String>) {
+    private fun cmdKick(player: Player, args: Array<out String>) {
         if (args.size < 2) { player.sendMessage("§c사용법: /길드 추방 [플레이어]"); return }
         val guild = gm.getGuildByPlayer(player) ?: run { player.sendMessage("§c길드에 소속되어 있지 않습니다."); return }
         if (!guild.isOfficer(player.uniqueId)) { player.sendMessage("§c부길드장 이상만 추방할 수 있습니다."); return }
@@ -214,7 +214,7 @@ class GuildCommand(
 
     // ─── /길드 국고 ──────────────────────────────────────────────────────
 
-    private fun cmdTreasury(player: Player, args: Array<String>) {
+    private fun cmdTreasury(player: Player, args: Array<out String>) {
         if (args.size < 3 || args[1] !in listOf("입금", "출금")) {
             player.sendMessage("§c사용법: /길드 국고 입금 [금액]")
             player.sendMessage("§c사용법: /길드 국고 출금 [금액] §8(부길드장 이상)")
@@ -256,7 +256,7 @@ class GuildCommand(
 
     // ─── /길드 공지 ───────────────────────────────────────────────────────
 
-    private fun cmdAnnounce(player: Player, args: Array<String>) {
+    private fun cmdAnnounce(player: Player, args: Array<out String>) {
         if (args.size < 2) { player.sendMessage("§c사용법: /길드 공지 [내용]"); return }
         val guild = gm.getGuildByPlayer(player) ?: run { player.sendMessage("§c길드에 소속되어 있지 않습니다."); return }
         if (!guild.isOfficer(player.uniqueId)) { player.sendMessage("§c부길드장 이상만 공지를 설정할 수 있습니다."); return }
@@ -266,7 +266,7 @@ class GuildCommand(
 
     // ─── /길드 임명/해임/위임 ────────────────────────────────────────────
 
-    private fun cmdPromote(player: Player, args: Array<String>) {
+    private fun cmdPromote(player: Player, args: Array<out String>) {
         if (args.size < 2) { player.sendMessage("§c사용법: /길드 임명 [플레이어]"); return }
         val guild = gm.getGuildByPlayer(player) ?: run { player.sendMessage("§c길드에 소속되어 있지 않습니다."); return }
         if (!guild.isMaster(player.uniqueId)) { player.sendMessage("§c길드장만 부길드장을 임명할 수 있습니다."); return }
@@ -276,7 +276,7 @@ class GuildCommand(
             .onFailure { player.sendMessage("§c${it.message}") }
     }
 
-    private fun cmdDemote(player: Player, args: Array<String>) {
+    private fun cmdDemote(player: Player, args: Array<out String>) {
         if (args.size < 2) { player.sendMessage("§c사용법: /길드 해임 [플레이어]"); return }
         val guild = gm.getGuildByPlayer(player) ?: run { player.sendMessage("§c길드에 소속되어 있지 않습니다."); return }
         if (!guild.isMaster(player.uniqueId)) { player.sendMessage("§c길드장만 해임할 수 있습니다."); return }
@@ -286,7 +286,7 @@ class GuildCommand(
             .onFailure { player.sendMessage("§c${it.message}") }
     }
 
-    private fun cmdTransfer(player: Player, args: Array<String>) {
+    private fun cmdTransfer(player: Player, args: Array<out String>) {
         if (args.size < 2) { player.sendMessage("§c사용법: /길드 위임 [플레이어]"); return }
         val guild = gm.getGuildByPlayer(player) ?: run { player.sendMessage("§c길드에 소속되어 있지 않습니다."); return }
         if (!guild.isMaster(player.uniqueId)) { player.sendMessage("§c길드장만 위임할 수 있습니다."); return }
@@ -337,7 +337,7 @@ class GuildCommand(
 
     // ─── /길드 폭탄 ───────────────────────────────────────────────────────
 
-    private fun cmdBomb(player: Player, args: Array<String>) {
+    private fun cmdBomb(player: Player, args: Array<out String>) {
         if (!player.hasPermission("crguild.admin")) { player.sendMessage("§c이 명령어는 관리자만 사용할 수 있습니다."); return }
         val amount = if (args.size >= 2) args[1].toIntOrNull() ?: 1 else 1
         if (amount !in 1..64) { player.sendMessage("§c수량은 1~64 사이여야 합니다."); return }

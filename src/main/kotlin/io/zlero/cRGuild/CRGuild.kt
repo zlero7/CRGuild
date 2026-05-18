@@ -18,11 +18,6 @@ class CRGuildPlugin : CRPlugin() {
         WarAdminCommand::class,
     )
 
-    override fun onEnable() {
-        saveDefaultConfig()
-        super.onEnable()
-    }
-
     override fun onCREnabled() {
         instance = this
         logger.info("CRGuild 활성화 완료!")

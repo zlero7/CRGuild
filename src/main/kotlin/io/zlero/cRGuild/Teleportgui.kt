@@ -19,11 +19,13 @@ import java.util.UUID
  * 열기: TeleportGui.open(player, guild, isAtWar, plugin, gm)
  */
 class TeleportGui private constructor(
-    private val plugin: CRGuildPlugin,
+    plugin: CRGuildPlugin,
     private val gm: GuildManager,
     private val guild: GuildData,
     private val isAtWar: Boolean
 ) : View(plugin, GUI_TITLE, rows = if (guild.beacons.size <= 9) 1 else 2) {
+
+    private val crPlugin = plugin   // View.plugin is JavaPlugin; keep a typed reference
 
     companion object {
         private const val GUI_TITLE = "§6§l성 이동"
@@ -81,7 +83,7 @@ class TeleportGui private constructor(
                     pendingTeleports[player.uniqueId] = player.location.clone()
 
                     var remaining = delay
-                    val task = plugin.scheduler.runTimer(0L, 20L) {
+                    val task = crPlugin.scheduler.runTimer(0L, 20L) {
                         if (!player.isOnline) { cancelPending(player.uniqueId); return@runTimer }
 
                         // 움직임 감지
