@@ -317,7 +317,7 @@ class GuildCommand(
 
     private fun cmdTeleport(player: Player) {
         val guild = gm.getGuildByPlayer(player) ?: run { player.sendMessage("§c길드에 소속되어 있지 않습니다."); return }
-        TeleportGui.openGui(player, guild, guild.warActive)
+        TeleportGui.open(player, guild, guild.warActive, plugin, gm)
     }
 
     // ─── /길드 채팅 (토글) ───────────────────────────────────────────────
