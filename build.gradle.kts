@@ -31,7 +31,7 @@ tasks {
 
     shadowJar {
         archiveClassifier.set("")
-        archiveFileName.set("CRGuild-${project.version}-all.jar")
+        archiveFileName.set("CRGuild-${project.version}.jar")
 
         dependencies {
             exclude(dependency("org.jetbrains.kotlin:kotlin-stdlib"))
