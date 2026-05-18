@@ -1,14 +1,14 @@
 package io.zlero.cRGuild
 
+import io.zlero.cRFramework.core.component.annotation.Component
+import io.zlero.cRFramework.listener.annotation.Subscribe
 import org.bukkit.Location
 import org.bukkit.Material
 import org.bukkit.World
 import org.bukkit.block.data.Bisected
 import org.bukkit.block.data.type.Door
 import org.bukkit.entity.Player
-import org.bukkit.event.EventHandler
 import org.bukkit.event.EventPriority
-import org.bukkit.event.Listener
 import org.bukkit.event.block.Action
 import org.bukkit.event.block.BlockBreakEvent
 import org.bukkit.event.block.BlockDamageEvent
@@ -17,13 +17,17 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent
 import org.bukkit.event.player.AsyncPlayerChatEvent
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.event.player.PlayerJoinEvent
+import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.inventory.ItemStack
 import org.bukkit.potion.PotionEffect
 import org.bukkit.potion.PotionEffectType
 
-class GuildListener(private val plugin: CRGuildPlugin) : Listener {
-
-    private val gm get() = plugin.guildManager
+@Component
+class GuildListener(
+    private val plugin: CRGuildPlugin,
+    private val gm: GuildManager,
+    private val config: GuildConfig
+) {
 
     // 열림 상태로 고정된 길드 철문의 하단 블록 위치 목록
     private val openDoors = HashSet<Location>()
@@ -31,40 +35,48 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
     // 길드 채팅 토글 ON 상태인 플레이어 UUID 목록
     val guildChatPlayers = HashSet<java.util.UUID>()
 
-    // ─── 접속 시 보스바 재부여
+    // ─── 접속 시 보스바 재부여 ────────────────────────────────────────────
 
-    @EventHandler
+    @Subscribe
     fun onPlayerJoin(event: PlayerJoinEvent) {
         val player = event.player
         val guild  = gm.getGuildByPlayer(player) ?: return
         if (guild.warTarget == null) return
-        plugin.server.scheduler.runTaskLater(plugin, Runnable {
+        plugin.scheduler.runLater(20L) {
             gm.restoreBossBarForPlayer(player, guild)
-        }, 20L)
+        }
     }
 
-    // ─── 신호기 우클릭 GUI 차단 ───────────────────────────────────────────
-    // ✅ HIGHEST → NORMAL 로 낮춤 (onDoorInteract 와 우선순위 충돌 방지)
+    // ─── 퇴장 시 보스바 제거 & 길드 채팅 해제 ───────────────────────────
 
-    @EventHandler(priority = EventPriority.NORMAL)
+    @Subscribe
+    fun onPlayerQuit(event: PlayerQuitEvent) {
+        val player = event.player
+        val guild  = gm.getGuildByPlayer(player)
+        if (guild != null) {
+            gm.removePlayerFromWarBossBar(player, guild.name)
+        }
+        guildChatPlayers.remove(player.uniqueId)
+    }
+
+    // ─── 신호기 우클릭 GUI 차단 ──────────────────────────────────────────
+
+    @Subscribe(priority = EventPriority.NORMAL)
     fun onBeaconInteract(event: PlayerInteractEvent) {
         if (event.action != Action.RIGHT_CLICK_BLOCK) return
         val block = event.clickedBlock ?: return
         if (block.type != Material.BEACON) return
-        // 모든 신호기 우클릭 차단 (효과 설정 GUI 비활성화)
         event.isCancelled = true
     }
 
     // ─── 철문 상호작용: 길드원 토글 & 전쟁 중 폭탄 파괴 ─────────────────
-    // ✅ HIGHEST → HIGH 로 낮춤
 
-    @EventHandler(priority = EventPriority.HIGH)
+    @Subscribe(priority = EventPriority.HIGH)
     fun onDoorInteract(event: PlayerInteractEvent) {
         if (event.action != Action.RIGHT_CLICK_BLOCK) return
         val block = event.clickedBlock ?: return
         if (block.type != Material.IRON_DOOR) return
 
-        // ✅ 오프핸드 중복 이벤트 방지 (메인핸드만 처리)
         if (event.hand != org.bukkit.inventory.EquipmentSlot.HAND) return
 
         event.setUseItemInHand(org.bukkit.event.Event.Result.DENY)
@@ -75,13 +87,10 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
         val bottomLoc = getBottomDoorLoc(block.location)
         val bx = bottomLoc.blockX; val bz = bottomLoc.blockZ
 
-        // 길드 영토 내 철문인지 확인
         val ownerGuild = gm.getGuildByTerritory(world.name, bx, bz)
 
-        // 영토 밖 철문은 기본 동작 허용
         if (ownerGuild == null) return
 
-        // 바닐라 철문 동작 차단 (철문은 레드스톤 없이 열리지 않으므로 직접 처리)
         event.isCancelled = true
 
         val playerGuild = gm.getGuildByPlayer(player)
@@ -93,11 +102,9 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
             && playerGuild.name == ownerGuild.warTarget
             && GuildItems.isBomb(handItem)
         ) {
-            // 폭탄 1개 소모
             if (handItem.amount > 1) handItem.amount -= 1
             else player.inventory.setItemInMainHand(null)
 
-            // 철문 상하 2칸 제거 후 철문 아이템 드랍
             val bottomBlock = world.getBlockAt(bottomLoc)
             val topBlock    = world.getBlockAt(bottomLoc.clone().add(0.0, 1.0, 0.0))
             world.dropItemNaturally(bottomLoc, ItemStack(Material.IRON_DOOR, 1))
@@ -109,7 +116,7 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
 
         // ── 자기 길드원 → 철문 토글 ──
         if (playerGuild != null && playerGuild.name == ownerGuild.name) {
-            toggleDoor(bottomLoc, player) // ✅ player 추가
+            toggleDoor(bottomLoc, player)
             return
         }
 
@@ -122,7 +129,6 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
     }
 
     /** 철문 상하단 블록을 동시에 열기/닫기 토글 */
-    // ✅ player 파라미터 추가 → sendBlockChange 로 클라이언트 강제 동기화
     private fun toggleDoor(bottomLoc: Location, player: Player) {
         val world       = bottomLoc.world ?: return
         val bottomBlock = world.getBlockAt(bottomLoc)
@@ -137,7 +143,6 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
         bottomBlock.blockData = bottomData
         topBlock.blockData    = topData
 
-        // ✅ 클라이언트에 블록 상태 강제 동기화
         player.sendBlockChange(bottomBlock.location, bottomData)
         player.sendBlockChange(topBlock.location, topData)
 
@@ -152,7 +157,7 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
 
     // ─── 신호기 설치 → 길드 생성 or 추가 성 등록 ─────────────────────────
 
-    @EventHandler(priority = EventPriority.NORMAL)
+    @Subscribe(priority = EventPriority.NORMAL)
     fun onBeaconPlace(event: BlockPlaceEvent) {
         if (event.block.type != Material.BEACON) return
         val player = event.player
@@ -175,11 +180,11 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
                 player.sendMessage("§a§l[길드 창설] §r§f${pendingName} §a길드가 창설되었습니다!")
                 player.sendMessage("§71번성 위치: §f$bx, $by, $bz  §7| 영토: §f50x50")
                 player.sendMessage("§7주간 세금: §f${gm.formatMoney(guild.weeklyTax())}원 §7| 최대 인원: §f${guild.maxMembers()}명")
-                plugin.server.broadcastMessage(plugin.msg("guild.create-broadcast", "guild" to pendingName))
-                plugin.server.scheduler.runTask(plugin, Runnable {
+                plugin.server.broadcastMessage(config.msg("guild.create-broadcast", "guild" to pendingName))
+                plugin.scheduler.run {
                     buildCastleAt(world, bx, by, bz)
                     player.sendMessage("§7영토와 기본 성이 설치되었습니다.")
-                })
+                }
             }
             result.onFailure {
                 player.sendMessage("§c길드 창설 실패: ${it.message}")
@@ -210,10 +215,8 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
             val num = myGuild.beacons.size
             player.sendMessage("§a§l[성 추가] §r§a${num}번성이 등록되었습니다! §7위치: $bx, $by, $bz")
             gm.broadcastToGuild(myGuild, "§e${num}번성이 새롭게 등록되었습니다!")
-            plugin.server.broadcastMessage(plugin.msg("guild.beacon-add-broadcast", "guild" to myGuild.name))
-            plugin.server.scheduler.runTask(plugin, Runnable {
-                buildCastleAt(world, bx, by, bz)
-            })
+            plugin.server.broadcastMessage(config.msg("guild.beacon-add-broadcast", "guild" to myGuild.name))
+            plugin.scheduler.run { buildCastleAt(world, bx, by, bz) }
         }
         result.onFailure {
             player.sendMessage("§c성 등록 실패: ${it.message}")
@@ -225,7 +228,7 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
         TerritoryBuilder.build(world, bx, by, bz)
         CastleBuilder.build(plugin, world, bx, by, bz)
 
-        val warX = bx + GuildLayout.WAR_BEACON_DX
+        val warX     = bx + GuildLayout.WAR_BEACON_DX
         val emeraldY = by + GuildLayout.EMERALD_DY
         for (dx in -1..1) {
             for (dz in -1..1) {
@@ -233,7 +236,7 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
             }
         }
 
-        val warBeaconY = by + GuildLayout.WAR_BEACON_DY
+        val warBeaconY     = by + GuildLayout.WAR_BEACON_DY
         val warBeaconBlock = world.getBlockAt(warX, warBeaconY, bz)
         warBeaconBlock.type = Material.BEACON
         (warBeaconBlock.state as? org.bukkit.block.Beacon)?.let { beacon ->
@@ -250,7 +253,7 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
 
     // ─── 아군 공격 방지 ───────────────────────────────────────────────────
 
-    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
+    @Subscribe(priority = EventPriority.NORMAL, ignoreCancelled = true)
     fun onPvP(event: EntityDamageByEntityEvent) {
         val attacker = event.damager as? Player ?: return
         val victim   = event.entity   as? Player ?: return
@@ -265,7 +268,7 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
 
     // ─── 길드 채팅 (토글 모드) ──────────────────────────────────────────
 
-    @EventHandler(priority = EventPriority.LOWEST)
+    @Subscribe(priority = EventPriority.LOWEST)
     fun onChat(event: AsyncPlayerChatEvent) {
         val player = event.player
         if (player.uniqueId !in guildChatPlayers) return
@@ -282,7 +285,7 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
 
     // ─── 영토 내 블록 파괴 보호 ───────────────────────────────────────────
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    @Subscribe(priority = EventPriority.HIGH, ignoreCancelled = true)
     fun onTerritoryBlockBreak(event: BlockBreakEvent) {
         val block  = event.block
         val player = event.player
@@ -302,7 +305,7 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
 
     // ─── 영토 내 블록 설치 보호 ───────────────────────────────────────────
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    @Subscribe(priority = EventPriority.HIGH, ignoreCancelled = true)
     fun onTerritoryBlockPlace(event: BlockPlaceEvent) {
         val block  = event.block
         val player = event.player
@@ -310,7 +313,7 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
         val bx = block.x; val bz = block.z
 
         if (block.type == Material.BEACON) return
-        if (block.type == Material.IRON_DOOR) return  // ✅ 철문 토글 시 블록 설치 이벤트 무시
+        if (block.type == Material.IRON_DOOR) return
 
         val ownerGuild = gm.getGuildByTerritory(world, bx, bz) ?: return
 
@@ -323,7 +326,7 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
 
     // ─── 전쟁 신호기 채굴 시작 → 슬로우니스 부여 ────────────────────────
 
-    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
+    @Subscribe(priority = EventPriority.NORMAL, ignoreCancelled = true)
     fun onBeaconDamage(event: BlockDamageEvent) {
         val block = event.block
         if (block.type != Material.BEACON) return
@@ -338,16 +341,16 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
 
     // ─── 신호기 파괴 처리 ─────────────────────────────────────────────────
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @Subscribe(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     fun onBeaconBreak(event: BlockBreakEvent) {
         val block = event.block
         if (block.type != Material.BEACON) return
 
-        val worldName = block.world.name
+        val worldName  = block.world.name
         val bx = block.x; val by = block.y; val bz = block.z
-        val player    = event.player
+        val player     = event.player
 
-        val ownerGuild = gm.getGuildByWarBeacon(worldName, bx, by, bz) ?: return
+        val ownerGuild  = gm.getGuildByWarBeacon(worldName, bx, by, bz) ?: return
         val playerGuild = gm.getGuildByPlayer(player)
 
         // ── 전쟁 중이 아닐 때 ──
@@ -373,14 +376,14 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
         }
 
         player.removePotionEffect(PotionEffectType.SLOW_DIGGING)
-        plugin.server.scheduler.runTask(plugin, Runnable {
+        plugin.scheduler.run {
             gm.destroyBeaconTerritory(worldName, bx, by, bz)
-        })
+        }
     }
 
     // ─── 에메랄드 블록 파괴 차단 (전쟁 신호기 받침대 보호) ──────────────
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @Subscribe(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     fun onEmeraldBreak(event: BlockBreakEvent) {
         val block = event.block
         if (block.type != Material.EMERALD_BLOCK) return
@@ -391,9 +394,9 @@ class GuildListener(private val plugin: CRGuildPlugin) : Listener {
         val isProtected = gm.getAllGuilds().any { guild ->
             guild.beacons.any { b ->
                 b.world == worldName &&
-                        by == b.y + GuildLayout.EMERALD_DY &&
-                        bx in (b.warX - 1)..(b.warX + 1) &&
-                        bz in (b.z - 1)..(b.z + 1)
+                by == b.y + GuildLayout.EMERALD_DY &&
+                bx in (b.warX - 1)..(b.warX + 1) &&
+                bz in (b.z - 1)..(b.z + 1)
             }
         }
 
