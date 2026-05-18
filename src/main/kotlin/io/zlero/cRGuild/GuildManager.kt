@@ -1,28 +1,37 @@
 package io.zlero.cRGuild
 
+import io.zlero.cRFramework.core.component.annotation.Component
+import io.zlero.cRFramework.core.component.annotation.Module
+import io.zlero.cRFramework.core.component.annotation.Setup
+import io.zlero.cRFramework.core.component.annotation.Singleton
+import io.zlero.cRFramework.core.component.annotation.Teardown
 import net.milkbowl.vault.economy.Economy
 import org.bukkit.Bukkit
 import org.bukkit.boss.BarColor
 import org.bukkit.boss.BarStyle
 import org.bukkit.boss.BossBar
-import org.bukkit.configuration.file.YamlConfiguration
 import org.bukkit.entity.Player
 import org.bukkit.scheduler.BukkitTask
-import java.io.File
 import java.util.UUID
 
-class GuildManager(private val plugin: CRGuildPlugin) {
+@Component
+@Singleton
+@Module
+class GuildManager(
+    private val plugin: CRGuildPlugin,
+    private val config: GuildConfig
+) {
 
-    private val guilds = HashMap<String, GuildData>()
-    private val playerGuildMap = HashMap<UUID, String>()
+    private val guilds            = HashMap<String, GuildData>()
+    private val playerGuildMap    = HashMap<UUID, String>()
     private val pendingDeclarations = HashMap<UUID, String>()
     private var taxTask: BukkitTask? = null
-    private val eco: Economy get() = plugin.economy
+    private lateinit var eco: Economy
 
     // 전쟁 보스바: guildName → BossBar
-    private val warBossBars = HashMap<String, BossBar>()
+    private val warBossBars  = HashMap<String, BossBar>()
     // 보스바 갱신 태스크: guildName → taskId
-    private val warBarTasks = HashMap<String, BukkitTask>()
+    private val warBarTasks  = HashMap<String, BukkitTask>()
 
     // ★ 초대 대기 목록: targetUUID → (guild, inviterUUID)
     private val pendingInvites = HashMap<UUID, Pair<GuildData, UUID>>()
@@ -31,15 +40,34 @@ class GuildManager(private val plugin: CRGuildPlugin) {
     val storage: GuildStorage = GuildStorageFactory.create(plugin)
 
     // ★ 탈퇴 쿨타임: playerUUID → 탈퇴 시각(ms) - 24시간 쿨타임
-    private val leaveCooldowns = HashMap<UUID, Long>()
+    private val leaveCooldowns   = HashMap<UUID, Long>()
     private val LEAVE_COOLDOWN_MS = 24L * 60 * 60 * 1000
+
+    // ─── 생명주기 (@Setup / @Teardown) ──────────────────────────────────
+
+    @Setup
+    fun setup() {
+        // Vault Economy 연동
+        val rsp = plugin.server.servicesManager.getRegistration(Economy::class.java)
+            ?: throw IllegalStateException("Vault 또는 경제 플러그인을 찾을 수 없습니다. 플러그인을 비활성화합니다.")
+        eco = rsp.provider
+
+        loadAll()
+        startTaxScheduler()
+    }
+
+    @Teardown
+    fun teardown() {
+        stopTaxScheduler()
+        clearAllWarBossBars()
+        saveAll()
+    }
 
     // ─── 로드/저장 ────────────────────────────────────────────────────────
 
     fun loadAll() {
         storage.init()
 
-        // 저장소에서 길드 목록 로드
         storage.loadAll().forEach { guild ->
             guilds[guild.name] = guild
             playerGuildMap[guild.master] = guild.name
@@ -47,7 +75,6 @@ class GuildManager(private val plugin: CRGuildPlugin) {
             guild.members.forEach  { playerGuildMap[it] = guild.name }
         }
 
-        // 탈퇴 쿨타임 로드
         leaveCooldowns.putAll(storage.loadLeaveCooldowns())
 
         // 서버 재시작 시 진행 중인 전쟁 보스바 복원
@@ -61,7 +88,6 @@ class GuildManager(private val plugin: CRGuildPlugin) {
     fun saveAll() {
         guilds.values.forEach { saveGuild(it) }
         saveLeaveCooldowns()
-        // SQL 연결 해제
         (storage as? SqlGuildStorage)?.close()
     }
 
@@ -70,13 +96,12 @@ class GuildManager(private val plugin: CRGuildPlugin) {
     }
 
     fun saveGuildAsync(guild: GuildData) {
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, Runnable {
+        plugin.scheduler.runAsync {
             runCatching { storage.save(guild) }
                 .onFailure { plugin.logger.warning("[CRGuild] 비동기 저장 실패 (${guild.name}): ${it.message}") }
-        })
+        }
     }
 
-    // 탈퇴 쿨타임 저장
     private fun saveLeaveCooldowns() {
         val now = System.currentTimeMillis()
         val filtered = leaveCooldowns.filter { now - it.value < LEAVE_COOLDOWN_MS }
@@ -117,13 +142,12 @@ class GuildManager(private val plugin: CRGuildPlugin) {
 
     fun setPendingInvite(target: Player, guild: GuildData, inviter: UUID) {
         pendingInvites[target.uniqueId] = Pair(guild, inviter)
-        // 60초 후 초대 자동 만료
-        Bukkit.getScheduler().runTaskLater(plugin, Runnable {
+        plugin.scheduler.runAfterSeconds(60) {
             if (pendingInvites.containsKey(target.uniqueId)) {
                 pendingInvites.remove(target.uniqueId)
                 target.sendMessage("§7${guild.name} 길드 초대가 만료되었습니다.")
             }
-        }, 20L * 60)
+        }
     }
 
     fun getPendingInvite(uuid: UUID): Pair<GuildData, UUID>? = pendingInvites[uuid]
@@ -136,7 +160,6 @@ class GuildManager(private val plugin: CRGuildPlugin) {
         if (getGuildByPlayer(target) != null)
             return Result.failure(IllegalStateException("이미 다른 길드에 소속되어 있습니다."))
 
-        // ★ 탈퇴 쿨타임 확인 (수락 시에도 적용)
         val remaining = getLeaveCooldownRemaining(target.uniqueId)
         if (remaining > 0)
             return Result.failure(IllegalStateException("길드 재가입 쿨타임이 남아있습니다. (${formatCooldown(remaining)} 후 가능)"))
@@ -157,15 +180,15 @@ class GuildManager(private val plugin: CRGuildPlugin) {
 
     fun getLeaveCooldownRemaining(uuid: UUID): Long {
         val leaveTime = leaveCooldowns[uuid] ?: return 0L
-        val elapsed = System.currentTimeMillis() - leaveTime
+        val elapsed   = System.currentTimeMillis() - leaveTime
         return (LEAVE_COOLDOWN_MS - elapsed).coerceAtLeast(0L)
     }
 
     fun formatCooldown(ms: Long): String {
         val totalSecs = ms / 1000
-        val hours = totalSecs / 3600
-        val mins  = (totalSecs % 3600) / 60
-        val secs  = totalSecs % 60
+        val hours     = totalSecs / 3600
+        val mins      = (totalSecs % 3600) / 60
+        val secs      = totalSecs % 60
         return "%d시간 %d분 %d초".format(hours, mins, secs)
     }
 
@@ -212,9 +235,7 @@ class GuildManager(private val plugin: CRGuildPlugin) {
             if (Bukkit.isPrimaryThread()) {
                 TerritoryBuilder.destroy(world, b.x, b.y, b.z)
             } else {
-                Bukkit.getScheduler().runTask(plugin, Runnable {
-                    TerritoryBuilder.destroy(world, b.x, b.y, b.z)
-                })
+                plugin.scheduler.run { TerritoryBuilder.destroy(world, b.x, b.y, b.z) }
             }
         }
 
@@ -226,22 +247,21 @@ class GuildManager(private val plugin: CRGuildPlugin) {
     // ─── 전쟁 신호기 파괴 → 영토 제거 ──────────────────────────────────
 
     fun destroyBeaconTerritory(world: String, wx: Int, wy: Int, wz: Int): Boolean {
-        val guild = getGuildByWarBeacon(world, wx, wy, wz) ?: return false
-
+        val guild      = getGuildByWarBeacon(world, wx, wy, wz) ?: return false
         val beaconData = guild.beacons.find { it.isWarBeacon(world, wx, wy, wz) } ?: return false
-        val bukkitWorld = Bukkit.getWorld(world) ?: return false
+        val bWorld     = Bukkit.getWorld(world) ?: return false
 
-        TerritoryBuilder.destroy(bukkitWorld, beaconData.x, beaconData.y, beaconData.z)
+        TerritoryBuilder.destroy(bWorld, beaconData.x, beaconData.y, beaconData.z)
         guild.beacons.remove(beaconData)
 
         if (guild.beacons.isEmpty()) {
             val winnerName = guild.warTarget
             val winner = if (winnerName != null) guilds[winnerName] else null
 
-            broadcastToGuild(guild, plugin.msg("war.defeat.to-loser", "guild" to guild.name))
+            broadcastToGuild(guild, config.msg("war.defeat.to-loser", "guild" to guild.name))
             if (winner != null) {
-                broadcastToGuild(winner, plugin.msg("war.defeat.to-winner", "guild" to guild.name))
-                Bukkit.broadcastMessage(plugin.msg("war.defeat.broadcast", "winner_guild" to winner.name, "guild" to guild.name))
+                broadcastToGuild(winner, config.msg("war.defeat.to-winner", "guild" to guild.name))
+                Bukkit.broadcastMessage(config.msg("war.defeat.broadcast", "winner_guild" to winner.name, "guild" to guild.name))
             }
             if (winner != null) endWar(guild, winner)
             disbandGuild(guild.name)
@@ -252,8 +272,8 @@ class GuildManager(private val plugin: CRGuildPlugin) {
         if (guild.warActive) {
             val winnerName = guild.warTarget
             val winner = if (winnerName != null) guilds[winnerName] else null
-            broadcastToGuild(guild, plugin.msg("war.beacon-destroy.to-loser", "guild" to guild.name, "remaining" to guild.beacons.size))
-            if (winner != null) broadcastToGuild(winner, plugin.msg("war.beacon-destroy.to-winner", "guild" to guild.name, "remaining" to guild.beacons.size))
+            broadcastToGuild(guild,   config.msg("war.beacon-destroy.to-loser",  "guild" to guild.name, "remaining" to guild.beacons.size))
+            if (winner != null) broadcastToGuild(winner, config.msg("war.beacon-destroy.to-winner", "guild" to guild.name, "remaining" to guild.beacons.size))
         }
 
         return true
@@ -261,10 +281,6 @@ class GuildManager(private val plugin: CRGuildPlugin) {
 
     // ─── 멤버 관리 ───────────────────────────────────────────────────────
 
-    /**
-     * ★ 수정: 초대는 대기 상태로 전환만 함 (즉시 가입 X)
-     * 실제 가입은 acceptInvite()에서 처리
-     */
     fun inviteMember(guild: GuildData, inviter: Player, target: Player): Result<Unit> {
         if (guild.totalMembers() >= guild.maxMembers())
             return Result.failure(IllegalStateException("길드 최대 인원(${guild.maxMembers()}명)에 도달했습니다."))
@@ -273,10 +289,9 @@ class GuildManager(private val plugin: CRGuildPlugin) {
         if (pendingInvites.containsKey(target.uniqueId))
             return Result.failure(IllegalStateException("${target.name}님은 이미 길드 초대를 받은 상태입니다."))
 
-        // ★ 초대 시에도 탈퇴 쿨타임 확인
         val remaining = getLeaveCooldownRemaining(target.uniqueId)
         if (remaining > 0) {
-            val msg = plugin.msg("guild.invite-cooldown", "player" to target.name, "time" to formatCooldown(remaining))
+            val msg = config.msg("guild.invite-cooldown", "player" to target.name, "time" to formatCooldown(remaining))
             return Result.failure(IllegalStateException(msg))
         }
 
@@ -300,7 +315,6 @@ class GuildManager(private val plugin: CRGuildPlugin) {
         if (guild.isMaster(player.uniqueId))
             return Result.failure(IllegalStateException("길드장은 탈퇴할 수 없습니다. 해산 또는 위임하세요."))
 
-        // ★ 탈퇴 쿨타임 확인
         val remaining = getLeaveCooldownRemaining(player.uniqueId)
         if (remaining > 0)
             return Result.failure(IllegalStateException("길드 재가입 쿨타임이 남아있습니다. (${formatCooldown(remaining)} 후 가능)"))
@@ -309,13 +323,12 @@ class GuildManager(private val plugin: CRGuildPlugin) {
         guild.members.remove(player.uniqueId)
         playerGuildMap.remove(player.uniqueId)
 
-        // ★ 탈퇴 시각 기록
         leaveCooldowns[player.uniqueId] = System.currentTimeMillis()
         val filtered = leaveCooldowns.filter { System.currentTimeMillis() - it.value < LEAVE_COOLDOWN_MS }
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, Runnable {
+        plugin.scheduler.runAsync {
             runCatching { storage.saveLeaveCooldowns(filtered) }
                 .onFailure { plugin.logger.warning("[CRGuild] 탈퇴 쿨타임 저장 실패: ${it.message}") }
-        })
+        }
 
         saveGuildAsync(guild)
         return Result.success(Unit)
@@ -394,20 +407,19 @@ class GuildManager(private val plugin: CRGuildPlugin) {
 
     // ─── 세금 스케줄러 ────────────────────────────────────────────────────
 
-    fun startTaxScheduler() {
-        // 매시간 체크하면서 lastTaxAt 기준 1주일이 지난 길드에만 징수
-        taxTask = Bukkit.getScheduler().runTaskTimer(plugin, Runnable { collectWeeklyTax() }, 20L * 60 * 60, 20L * 60 * 60)
+    private fun startTaxScheduler() {
+        // 1시간 후 첫 실행, 이후 매시간 체크. lastTaxAt 기준 1주일이 지난 길드에만 징수
+        taxTask = plugin.scheduler.runTimer(20L * 60 * 60, 20L * 60 * 60) { collectWeeklyTax() }
     }
 
-    fun stopTaxScheduler() { taxTask?.cancel(); taxTask = null }
+    private fun stopTaxScheduler() { taxTask?.cancel(); taxTask = null }
 
     private fun collectWeeklyTax() {
-        val now         = System.currentTimeMillis()
-        val weekMs      = 7L * 24 * 60 * 60 * 1000
-        val toDisband   = mutableListOf<String>()
+        val now       = System.currentTimeMillis()
+        val weekMs    = 7L * 24 * 60 * 60 * 1000
+        val toDisband = mutableListOf<String>()
 
         guilds.values.forEach { guild ->
-            // lastTaxAt == 0 이면 최초 징수: 길드 생성 시점부터 1주일 후
             if (guild.lastTaxAt != 0L && now - guild.lastTaxAt < weekMs) return@forEach
 
             val tax = guild.weeklyTax()
@@ -438,7 +450,7 @@ class GuildManager(private val plugin: CRGuildPlugin) {
         if (defender.warActive || defender.warTarget != null)
             return Result.failure(IllegalStateException("상대 길드가 이미 전쟁 중입니다."))
 
-        val minOnline = plugin.config.getInt("war.min-online", 4)
+        val minOnline      = config.warMinOnline
         val attackerOnline = getOnlineCount(attacker)
         val defenderOnline = getOnlineCount(defender)
         if (attackerOnline < minOnline)
@@ -448,19 +460,18 @@ class GuildManager(private val plugin: CRGuildPlugin) {
 
         attacker.warTarget     = defender.name
         attacker.warDeclaredAt = System.currentTimeMillis()
-        attacker.isWarAttacker = true   // ★ 공격측 표시
+        attacker.isWarAttacker = true
         defender.warTarget     = attacker.name
         defender.warDeclaredAt = System.currentTimeMillis()
-        defender.isWarAttacker = false  // ★ 수비측 표시
+        defender.isWarAttacker = false
         saveGuild(attacker); saveGuild(defender)
 
         startWarBossBar(attacker, defender, false)
 
-        Bukkit.getScheduler().runTaskLater(plugin, Runnable {
+        plugin.scheduler.runAfterSeconds(5 * 60) {
             if (attacker.warTarget == defender.name && !attacker.warActive) startWar(attacker, defender)
-        }, 20L * 60 * 5)
+        }
 
-        // ★ 메시지 대신 사운드로 전쟁 선포 알림
         soundToGuild(attacker, org.bukkit.Sound.ENTITY_WITHER_SPAWN, 1.0f, 0.8f)
         soundToGuild(defender, org.bukkit.Sound.ENTITY_WITHER_SPAWN, 1.0f, 0.8f)
         return Result.success(Unit)
@@ -472,22 +483,19 @@ class GuildManager(private val plugin: CRGuildPlugin) {
 
         startWarBossBar(a, b, true)
 
-        // ★ 전쟁 시작: 메시지 대신 사운드로 알림
         soundToGuild(a, org.bukkit.Sound.ENTITY_ENDER_DRAGON_GROWL, 1.0f, 1.0f)
         soundToGuild(b, org.bukkit.Sound.ENTITY_ENDER_DRAGON_GROWL, 1.0f, 1.0f)
 
-        Bukkit.getScheduler().runTaskLater(plugin, Runnable {
+        plugin.scheduler.runAfterSeconds(10 * 60) {
             if (a.warActive && a.warTarget == b.name) {
-                Bukkit.broadcastMessage(plugin.msg("war.draw.broadcast", "guild_a" to a.name, "guild_b" to b.name))
+                Bukkit.broadcastMessage(config.msg("war.draw.broadcast", "guild_a" to a.name, "guild_b" to b.name))
                 endWar(a, b)
             }
-        }, 20L * 60 * 10)
+        }
     }
 
     fun getSurrenderCost(guild: GuildData): Long {
-        val baseCost     = plugin.config.getLong("war.surrender-base-cost", 1_000_000L)
-        val costIncrease = plugin.config.getLong("war.surrender-cost-increase", 1_000_000L)
-        return baseCost + costIncrease * guild.surrenderCount
+        return config.surrenderBaseCost + config.surrenderCostIncrease * guild.surrenderCount
     }
 
     fun surrender(loser: GuildData): Result<Unit> {
@@ -495,15 +503,14 @@ class GuildManager(private val plugin: CRGuildPlugin) {
         val winner     = guilds[winnerName] ?: return Result.failure(IllegalStateException("상대 길드를 찾을 수 없습니다."))
 
         val cost = getSurrenderCost(loser)
-
         if (loser.treasury < cost)
             return Result.failure(IllegalStateException("국고 부족. 항복 비용: ${formatMoney(cost)}원 (${loser.surrenderCount + 1}회차), 현재: ${formatMoney(loser.treasury)}원"))
 
         loser.treasury -= cost
         loser.surrenderCount++
         endWar(loser, winner)
-        broadcastToGuild(loser,  plugin.msg("war.surrender.loser", "cost" to formatMoney(cost)))
-        broadcastToGuild(winner, plugin.msg("war.surrender.winner", "loser_guild" to loser.name))
+        broadcastToGuild(loser,  config.msg("war.surrender.loser",  "cost" to formatMoney(cost)))
+        broadcastToGuild(winner, config.msg("war.surrender.winner", "loser_guild" to loser.name))
         return Result.success(Unit)
     }
 
@@ -515,7 +522,6 @@ class GuildManager(private val plugin: CRGuildPlugin) {
         saveGuild(a); saveGuild(b)
     }
 
-    /** 관리자용 - 준비 시간 즉시 건너뛰고 전쟁 시작 */
     fun forceStartWar(attackerName: String, defenderName: String): Result<Unit> {
         val a = guilds[attackerName] ?: return Result.failure(IllegalStateException("길드를 찾을 수 없습니다: $attackerName"))
         val b = guilds[defenderName] ?: return Result.failure(IllegalStateException("길드를 찾을 수 없습니다: $defenderName"))
@@ -527,13 +533,12 @@ class GuildManager(private val plugin: CRGuildPlugin) {
         return Result.success(Unit)
     }
 
-    /** 관리자용 - 전쟁 무승부 종료 */
     fun forceDraw(attackerName: String, defenderName: String): Result<Unit> {
         val a = guilds[attackerName] ?: return Result.failure(IllegalStateException("길드를 찾을 수 없습니다: $attackerName"))
         val b = guilds[defenderName] ?: return Result.failure(IllegalStateException("길드를 찾을 수 없습니다: $defenderName"))
         if (a.warTarget != defenderName)
             return Result.failure(IllegalStateException("두 길드가 전쟁 중이 아닙니다."))
-        Bukkit.broadcastMessage("§8[§4⚔ 관리자 강제 종료§8] " + plugin.msg("war.draw.broadcast", "guild_a" to a.name, "guild_b" to b.name))
+        Bukkit.broadcastMessage("§8[§4⚔ 관리자 강제 종료§8] " + config.msg("war.draw.broadcast", "guild_a" to a.name, "guild_b" to b.name))
         broadcastToGuild(a, "§7관리자에 의해 전쟁이 무승부로 종료되었습니다.")
         broadcastToGuild(b, "§7관리자에 의해 전쟁이 무승부로 종료되었습니다.")
         endWar(a, b)
@@ -542,7 +547,6 @@ class GuildManager(private val plugin: CRGuildPlugin) {
 
     fun isAtWar(a: GuildData, b: GuildData): Boolean = a.warActive && a.warTarget == b.name
 
-    /** ★ 해당 길드가 수비측(선포 당한 쪽)인지 확인 */
     fun isDefender(guild: GuildData): Boolean = guild.warTarget != null && !guild.isWarAttacker
 
     // ─── 온라인 인원 수 ──────────────────────────────────────────────────
@@ -558,27 +562,25 @@ class GuildManager(private val plugin: CRGuildPlugin) {
         removeWarBossBar(a.name)
         removeWarBossBar(b.name)
 
-        val totalSecs  = if (isActive) 60 * 10 else 60 * 5
-        val startTime  = System.currentTimeMillis()
+        val totalSecs = if (isActive) 60 * 10 else 60 * 5
+        val startTime = System.currentTimeMillis()
+        val color     = if (isActive) BarColor.RED else BarColor.YELLOW
 
-        val color = if (isActive) BarColor.RED else BarColor.YELLOW
-        val style = BarStyle.SEGMENTED_10
-
-        val barA = Bukkit.createBossBar("", color, style)
-        val barB = Bukkit.createBossBar("", color, style)
+        val barA = Bukkit.createBossBar("", color, BarStyle.SEGMENTED_10)
+        val barB = Bukkit.createBossBar("", color, BarStyle.SEGMENTED_10)
         warBossBars[a.name] = barA
         warBossBars[b.name] = barB
 
         addBossBarPlayers(a, barA)
         addBossBarPlayers(b, barB)
 
-        val task = Bukkit.getScheduler().runTaskTimer(plugin, Runnable {
-            val elapsed = (System.currentTimeMillis() - startTime) / 1000.0
+        val task = plugin.scheduler.runTimer(0L, 20L) {
+            val elapsed   = (System.currentTimeMillis() - startTime) / 1000.0
             val remaining = (totalSecs - elapsed).coerceAtLeast(0.0)
             val progress  = (remaining / totalSecs).coerceIn(0.0, 1.0)
 
-            val mins = (remaining / 60).toInt()
-            val secs = (remaining % 60).toInt()
+            val mins    = (remaining / 60).toInt()
+            val secs    = (remaining % 60).toInt()
             val timeStr = "%d:%02d".format(mins, secs)
 
             val prefix = if (isActive) "§c⚔ 전쟁 진행 중" else "§e⚔ 전쟁 준비 중"
@@ -589,8 +591,7 @@ class GuildManager(private val plugin: CRGuildPlugin) {
 
             addBossBarPlayers(a, barA)
             addBossBarPlayers(b, barB)
-
-        }, 0L, 20L)
+        }
 
         warBarTasks[a.name] = task
         warBarTasks[b.name] = task
@@ -608,16 +609,16 @@ class GuildManager(private val plugin: CRGuildPlugin) {
         warBarTasks.remove(guildName)?.cancel()
     }
 
-    fun removePlayerFromWarBossBar(player: org.bukkit.entity.Player, guildName: String) {
+    fun removePlayerFromWarBossBar(player: Player, guildName: String) {
         warBossBars[guildName]?.removePlayer(player)
     }
 
     private fun restoreWarBossBar(guild: GuildData) {
         val targetName = guild.warTarget ?: return
-        val target = guilds[targetName] ?: return
+        val target     = guilds[targetName] ?: return
         if (guild.name > targetName) return
 
-        val isActive = guild.warActive
+        val isActive  = guild.warActive
         val totalSecs = if (isActive) 60 * 10 else 60 * 5
         val elapsed   = ((System.currentTimeMillis() - guild.warDeclaredAt) / 1000).toInt()
         val remaining = (totalSecs - elapsed).coerceAtLeast(0)
@@ -633,7 +634,7 @@ class GuildManager(private val plugin: CRGuildPlugin) {
         warBarTasks.clear()
     }
 
-    fun restoreBossBarForPlayer(player: org.bukkit.entity.Player, guild: GuildData) {
+    fun restoreBossBarForPlayer(player: Player, guild: GuildData) {
         val bar = warBossBars[guild.name] ?: return
         if (!bar.players.contains(player)) bar.addPlayer(player)
     }
