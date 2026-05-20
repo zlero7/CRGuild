@@ -189,9 +189,6 @@ class GuildListener(
             }
             result.onFailure {
                 player.sendMessage("§c길드 창설 실패: ${it.message}")
-                // 비콘 설치 실패 시 선포 비용 환불
-                gm.economy.depositPlayer(player, config.declareCost.toDouble())
-                player.sendMessage("§7선포 비용 §f${gm.formatMoney(config.declareCost)}원§7이 환불되었습니다.")
                 event.isCancelled = true
             }
             return
