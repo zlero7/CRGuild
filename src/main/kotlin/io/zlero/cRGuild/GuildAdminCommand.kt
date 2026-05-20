@@ -60,6 +60,7 @@ class GuildAdminCommand(
         if (ctx.size < 3) { ctx.sender.sendMessage("§c사용법: /길드관리 국고 [길드명] [금액]"); return }
         val guild  = gm.getGuild(ctx.args[1]) ?: run { ctx.sender.sendMessage("§c존재하지 않는 길드입니다."); return }
         val amount = ctx.args[2].replace(",", "").toLongOrNull() ?: run { ctx.sender.sendMessage("§c올바른 금액을 입력하세요."); return }
+        if (amount <= 0) { ctx.sender.sendMessage("§c금액은 1원 이상이어야 합니다."); return }
         guild.treasury += amount
         gm.saveGuild(guild)
         ctx.sender.sendMessage("§a${guild.name} 길드 국고에 §f${gm.formatMoney(amount)}원§a 입금. 현재: §f${gm.formatMoney(guild.treasury)}원")

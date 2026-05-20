@@ -60,6 +60,9 @@ data class GuildData(
         else -> 500_000L
     }
 
+    /** 길드장 + 부길드장 + 멤버 전체를 하나의 Set으로 반환 */
+    fun allMembers(): Set<UUID> = setOf(master) + officers + members
+
     fun isMember(uuid: UUID) = uuid == master || uuid in officers || uuid in members
     fun isOfficer(uuid: UUID) = uuid in officers || uuid == master
     fun isMaster(uuid: UUID) = uuid == master
@@ -81,6 +84,9 @@ data class GuildData(
         }
     }
 }
+
+/** 초대 대기 정보 */
+data class PendingInvite(val guild: GuildData, val inviterUuid: UUID)
 
 enum class GuildRank(val displayName: String) {
     MASTER("§6[ 길드장 ]"),

@@ -79,15 +79,15 @@ class GuildCommand(
         }
 
         player.sendMessage("  §7§l─ 길드원 목록 ─")
-        val allMembers = (setOf(guild.master) + guild.officers + guild.members)
-        allMembers.forEach { uuid ->
-            val name = Bukkit.getOfflinePlayer(uuid).name ?: uuid.toString().take(8)
+        guild.allMembers().forEach { uuid ->
+            val offlinePlayer = Bukkit.getOfflinePlayer(uuid)
+            val name = offlinePlayer.name ?: uuid.toString().take(8)
             val rank = when {
                 uuid == guild.master   -> "§6[장]"
                 uuid in guild.officers -> "§e[부]"
                 else                   -> "§7[멤]"
             }
-            if (Bukkit.getPlayer(uuid) != null) {
+            if (offlinePlayer.isOnline) {
                 player.sendMessage("    $rank §a$name §a●")
             } else {
                 player.sendMessage("    $rank §7$name §8●")
@@ -107,7 +107,7 @@ class GuildCommand(
         if (gm.getGuild(name) != null) { player.sendMessage("§c이미 존재하는 길드명입니다."); return }
         if (gm.getGuildByPlayer(player) != null) { player.sendMessage("§c이미 길드에 소속되어 있습니다."); return }
 
-        val declareCost = 1_000_000L
+        val declareCost = config.declareCost
         if (!gm.economy.has(player, declareCost.toDouble())) {
             player.sendMessage("§c길드 선포에 §f${gm.formatMoney(declareCost)}원§c이 필요합니다. (현재 잔액 부족)")
             return
@@ -261,6 +261,7 @@ class GuildCommand(
         val guild = gm.getGuildByPlayer(player) ?: run { player.sendMessage("§c길드에 소속되어 있지 않습니다."); return }
         if (!guild.isOfficer(player.uniqueId)) { player.sendMessage("§c부길드장 이상만 공지를 설정할 수 있습니다."); return }
         guild.announcement = args.drop(1).joinToString(" ")
+        gm.saveGuildAsync(guild)
         gm.broadcastToGuild(guild, "§e§l[길드 공지] §r§e${guild.announcement}")
     }
 
@@ -297,7 +298,7 @@ class GuildCommand(
     }
 
     private fun findMemberUuid(guild: GuildData, name: String): java.util.UUID? {
-        return (setOf(guild.master) + guild.officers + guild.members)
+        return guild.allMembers()
             .find { Bukkit.getOfflinePlayer(it).name?.equals(name, ignoreCase = true) == true }
     }
 
@@ -323,12 +324,11 @@ class GuildCommand(
     // ─── /길드 채팅 (토글) ───────────────────────────────────────────────
 
     private fun cmdChatToggle(player: Player) {
-        gm.getGuildByPlayer(player) ?: run { player.sendMessage("§c길드에 소속되어 있지 않습니다."); return }
+        val guild = gm.getGuildByPlayer(player) ?: run { player.sendMessage("§c길드에 소속되어 있지 않습니다."); return }
         if (player.uniqueId in listener.guildChatPlayers) {
             listener.guildChatPlayers.remove(player.uniqueId)
             player.sendMessage("§7[길드 채팅] §c꺼짐 §7— 일반 채팅으로 돌아왔습니다.")
         } else {
-            val guild = gm.getGuildByPlayer(player)!!
             listener.guildChatPlayers.add(player.uniqueId)
             player.sendMessage("§7[길드 채팅] §a켜짐 §7— 이제 모든 채팅이 §b${guild.name} §7길드원에게만 전송됩니다.")
             player.sendMessage("§7해제하려면 §f/길드 채팅 §7을 다시 입력하세요.")

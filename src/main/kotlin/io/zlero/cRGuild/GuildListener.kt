@@ -14,7 +14,8 @@ import org.bukkit.event.block.BlockBreakEvent
 import org.bukkit.event.block.BlockDamageEvent
 import org.bukkit.event.block.BlockPlaceEvent
 import org.bukkit.event.entity.EntityDamageByEntityEvent
-import org.bukkit.event.player.AsyncPlayerChatEvent
+import io.papermc.paper.event.player.AsyncChatEvent
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
@@ -188,6 +189,9 @@ class GuildListener(
             }
             result.onFailure {
                 player.sendMessage("§c길드 창설 실패: ${it.message}")
+                // 비콘 설치 실패 시 선포 비용 환불
+                gm.economy.depositPlayer(player, config.declareCost.toDouble())
+                player.sendMessage("§7선포 비용 §f${gm.formatMoney(config.declareCost)}원§7이 환불되었습니다.")
                 event.isCancelled = true
             }
             return
@@ -225,7 +229,7 @@ class GuildListener(
     }
 
     private fun buildCastleAt(world: World, bx: Int, by: Int, bz: Int) {
-        TerritoryBuilder.build(world, bx, by, bz)
+        TerritoryBuilder.build(plugin, world, bx, by, bz)
         CastleBuilder.build(plugin, world, bx, by, bz)
 
         val warX     = bx + GuildLayout.WAR_BEACON_DX
@@ -269,7 +273,7 @@ class GuildListener(
     // ─── 길드 채팅 (토글 모드) ──────────────────────────────────────────
 
     @Subscribe(priority = EventPriority.LOWEST)
-    fun onChat(event: AsyncPlayerChatEvent) {
+    fun onChat(event: AsyncChatEvent) {
         val player = event.player
         if (player.uniqueId !in guildChatPlayers) return
         event.isCancelled = true
@@ -279,8 +283,9 @@ class GuildListener(
             player.sendMessage("§c길드에 소속되어 있지 않아 길드 채팅이 해제되었습니다.")
             return
         }
-        val rank = guild.getRank(player.uniqueId)
-        gm.broadcastToGuild(guild, "§8[§b길드§8] ${rank.displayName} §f${player.name}§8: §7${event.message}")
+        val rank    = guild.getRank(player.uniqueId)
+        val message = LegacyComponentSerializer.legacySection().serialize(event.message())
+        gm.broadcastToGuild(guild, "§8[§b길드§8] ${rank.displayName} §f${player.name}§8: §7$message")
     }
 
     // ─── 영토 내 블록 파괴 보호 ───────────────────────────────────────────

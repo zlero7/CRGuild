@@ -68,10 +68,15 @@ class WarCommand(
                 player.sendMessage("§7전쟁 선포권 1개가 소모되었습니다.")
             }
             .onFailure {
-                // 선포 실패 시 선포권 반환
-                player.inventory.addItem(GuildItems.createWarTicket(1))
+                // 선포 실패 시 선포권 반환 — 인벤토리 꽉 차면 발밑에 드롭
+                val leftover = player.inventory.addItem(GuildItems.createWarTicket(1))
+                if (leftover.isNotEmpty()) {
+                    leftover.values.forEach { item -> player.world.dropItemNaturally(player.location, item) }
+                    player.sendMessage("§7인벤토리가 가득 차 전쟁 선포권이 발밑에 드롭되었습니다.")
+                } else {
+                    player.sendMessage("§7전쟁 선포권이 반환되었습니다.")
+                }
                 player.sendMessage("§c${it.message}")
-                player.sendMessage("§7전쟁 선포권이 반환되었습니다.")
             }
     }
 

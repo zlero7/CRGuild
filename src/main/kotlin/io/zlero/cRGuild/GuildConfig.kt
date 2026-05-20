@@ -17,6 +17,7 @@ class GuildConfig(plugin: JavaPlugin) : CRYamlConfiguration(plugin, "config.yml"
     val storageUsername: String get() = string("storage.username", "root")
     val storagePassword: String get() = string("storage.password", "")
 
+    val declareCost: Long get() = long("guild.declare-cost", 1_000_000L)
     val warMinOnline: Int get() = int("war.min-online", 4)
     val surrenderBaseCost: Long get() = long("war.surrender-base-cost", 1_000_000L)
     val surrenderCostIncrease: Long get() = long("war.surrender-cost-increase", 1_000_000L)

@@ -13,6 +13,7 @@ import org.bukkit.boss.BossBar
 import org.bukkit.entity.Player
 import org.bukkit.scheduler.BukkitTask
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 @Component
 @Singleton
@@ -22,26 +23,26 @@ class GuildManager(
     private val config: GuildConfig
 ) {
 
-    private val guilds            = HashMap<String, GuildData>()
-    private val playerGuildMap    = HashMap<UUID, String>()
-    private val pendingDeclarations = HashMap<UUID, String>()
+    private val guilds              = ConcurrentHashMap<String, GuildData>()
+    private val playerGuildMap      = ConcurrentHashMap<UUID, String>()
+    private val pendingDeclarations = ConcurrentHashMap<UUID, String>()
     private var taxTask: BukkitTask? = null
     private lateinit var eco: Economy
     val economy: Economy get() = eco   // GuildCommand 등 외부 접근용
 
     // 전쟁 보스바: guildName → BossBar
-    private val warBossBars  = HashMap<String, BossBar>()
+    private val warBossBars  = ConcurrentHashMap<String, BossBar>()
     // 보스바 갱신 태스크: guildName → taskId
-    private val warBarTasks  = HashMap<String, BukkitTask>()
+    private val warBarTasks  = ConcurrentHashMap<String, BukkitTask>()
 
-    // ★ 초대 대기 목록: targetUUID → (guild, inviterUUID)
-    private val pendingInvites = HashMap<UUID, Pair<GuildData, UUID>>()
+    // ★ 초대 대기 목록: targetUUID → PendingInvite
+    private val pendingInvites = ConcurrentHashMap<UUID, PendingInvite>()
 
     // ─── 저장소 (YAML / MySQL / SQLite 중 config.yml 설정에 따라 결정) ──
     val storage: GuildStorage = GuildStorageFactory.create(plugin)
 
     // ★ 탈퇴 쿨타임: playerUUID → 탈퇴 시각(ms) - 24시간 쿨타임
-    private val leaveCooldowns   = HashMap<UUID, Long>()
+    private val leaveCooldowns    = ConcurrentHashMap<UUID, Long>()
     private val LEAVE_COOLDOWN_MS = 24L * 60 * 60 * 1000
 
     // ─── 생명주기 (@Setup / @Teardown) ──────────────────────────────────
@@ -142,7 +143,7 @@ class GuildManager(
     // ─── ★ 초대 대기 관리 ───────────────────────────────────────────────
 
     fun setPendingInvite(target: Player, guild: GuildData, inviter: UUID) {
-        pendingInvites[target.uniqueId] = Pair(guild, inviter)
+        pendingInvites[target.uniqueId] = PendingInvite(guild, inviter)
         plugin.scheduler.runAfterSeconds(60) {
             if (pendingInvites.containsKey(target.uniqueId)) {
                 pendingInvites.remove(target.uniqueId)
@@ -151,7 +152,7 @@ class GuildManager(
         }
     }
 
-    fun getPendingInvite(uuid: UUID): Pair<GuildData, UUID>? = pendingInvites[uuid]
+    fun getPendingInvite(uuid: UUID): PendingInvite? = pendingInvites[uuid]
 
     fun acceptInvite(target: Player): Result<Unit> {
         val (guild, _) = pendingInvites.remove(target.uniqueId)
@@ -234,9 +235,9 @@ class GuildManager(
         guild.beacons.forEach { b ->
             val world = Bukkit.getWorld(b.world) ?: return@forEach
             if (Bukkit.isPrimaryThread()) {
-                TerritoryBuilder.destroy(world, b.x, b.y, b.z)
+                TerritoryBuilder.destroy(plugin, world, b.x, b.y, b.z)
             } else {
-                plugin.scheduler.run { TerritoryBuilder.destroy(world, b.x, b.y, b.z) }
+                plugin.scheduler.run { TerritoryBuilder.destroy(plugin, world, b.x, b.y, b.z) }
             }
         }
 
@@ -252,7 +253,7 @@ class GuildManager(
         val beaconData = guild.beacons.find { it.isWarBeacon(world, wx, wy, wz) } ?: return false
         val bWorld     = Bukkit.getWorld(world) ?: return false
 
-        TerritoryBuilder.destroy(bWorld, beaconData.x, beaconData.y, beaconData.z)
+        TerritoryBuilder.destroy(plugin, bWorld, beaconData.x, beaconData.y, beaconData.z)
         guild.beacons.remove(beaconData)
 
         if (guild.beacons.isEmpty()) {
@@ -336,7 +337,7 @@ class GuildManager(
     }
 
     fun promoteToOfficer(guild: GuildData, targetUuid: UUID): Result<Unit> {
-        if (!guild.members.contains(targetUuid))
+        if (targetUuid !in guild.members)
             return Result.failure(IllegalArgumentException("해당 플레이어는 일반 멤버가 아닙니다."))
         guild.members.remove(targetUuid)
         guild.officers.add(targetUuid)
@@ -345,7 +346,7 @@ class GuildManager(
     }
 
     fun demoteOfficer(guild: GuildData, targetUuid: UUID): Result<Unit> {
-        if (!guild.officers.contains(targetUuid))
+        if (targetUuid !in guild.officers)
             return Result.failure(IllegalArgumentException("해당 플레이어는 부길드장이 아닙니다."))
         guild.officers.remove(targetUuid)
         guild.members.add(targetUuid)
@@ -553,8 +554,7 @@ class GuildManager(
     // ─── 온라인 인원 수 ──────────────────────────────────────────────────
 
     fun getOnlineCount(guild: GuildData): Int {
-        return (setOf(guild.master) + guild.officers + guild.members)
-            .count { Bukkit.getPlayer(it) != null }
+        return guild.allMembers().count { Bukkit.getPlayer(it) != null }
     }
 
     // ─── 보스바 관리 ─────────────────────────────────────────────────────
@@ -599,9 +599,9 @@ class GuildManager(
     }
 
     private fun addBossBarPlayers(guild: GuildData, bar: BossBar) {
-        (setOf(guild.master) + guild.officers + guild.members).forEach { uuid ->
+        guild.allMembers().forEach { uuid ->
             val p = Bukkit.getPlayer(uuid) ?: return@forEach
-            if (!bar.players.contains(p)) bar.addPlayer(p)
+            if (p !in bar.players) bar.addPlayer(p)
         }
     }
 
@@ -643,13 +643,13 @@ class GuildManager(
     // ─── 유틸 ────────────────────────────────────────────────────────────
 
     fun broadcastToGuild(guild: GuildData, message: String) {
-        (setOf(guild.master) + guild.officers + guild.members)
+        guild.allMembers()
             .mapNotNull { Bukkit.getPlayer(it) }
             .forEach { it.sendMessage(message) }
     }
 
     fun soundToGuild(guild: GuildData, sound: org.bukkit.Sound, volume: Float = 1.0f, pitch: Float = 1.0f) {
-        (setOf(guild.master) + guild.officers + guild.members)
+        guild.allMembers()
             .mapNotNull { Bukkit.getPlayer(it) }
             .forEach { it.playSound(it.location, sound, volume, pitch) }
     }
