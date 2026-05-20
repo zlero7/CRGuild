@@ -123,7 +123,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly("com.github.zlero7:CRGuild:v1.0.2")
+    compileOnly("com.github.zlero7:CRGuild:1.0.2")
 }
 ```
 
