@@ -6,8 +6,8 @@
 
 | 항목 | 버전 |
 |------|------|
-| Minecraft | 1.20.4 |
-| Paper API | 1.20.4-R0.1-SNAPSHOT |
+| Minecraft | 1.20.4 ~ 1.21.7 |
+| Paper API | 1.21.4-R0.1-SNAPSHOT |
 | Java | 21 |
 | 프레임워크 | CRFramework 1.0.3 |
 

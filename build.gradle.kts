@@ -22,7 +22,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly("io.papermc.paper:paper-api:1.20.4-R0.1-SNAPSHOT")
+    compileOnly("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
     compileOnly(kotlin("stdlib"))
     compileOnly(kotlin("reflect"))
     compileOnly("com.github.MilkBowl:VaultAPI:1.7.1")
@@ -33,7 +33,7 @@ dependencies {
 
 tasks {
     runServer {
-        minecraftVersion("1.20.4")
+        minecraftVersion("1.21.4")
     }
 
     shadowJar {
