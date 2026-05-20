@@ -27,7 +27,7 @@ dependencies {
     compileOnly(kotlin("reflect"))
     compileOnly("com.github.MilkBowl:VaultAPI:1.7.1")
     compileOnly("com.sk89q.worldedit:worldedit-bukkit:7.3.0")
-    compileOnly("com.github.zlero7:CRFramework:1.0.0")
+    compileOnly("com.github.zlero7:CRFramework:1.0.3")
     compileOnly("com.zaxxer:HikariCP:5.1.0")
 }
 
